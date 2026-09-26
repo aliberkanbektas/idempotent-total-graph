@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Idempotent total graphs of the rings Z_n: code for computation, verification and visualization"
+version: 1.0.0
+date-released: 2026-09-26
+license: MIT
+authors:
+  - family-names: Kara
+    given-names: Yeliz
+    affiliation: "Bursa Uludağ University, Department of Mathematics"
+  - family-names: Bektaş
+    given-names: Ali Berkan
+    affiliation: "Bursa Uludağ University, Department of Mathematics"
+  - family-names: Cangül
+    given-names: İsmail Naci
+    affiliation: "Bursa Uludağ University, Department of Mathematics"
+keywords:
+  - idempotent total graph
+  - zero-divisor graph
+  - commutative ring
+  - Chinese Remainder Theorem
+  - NetworkX
+abstract: >-
+  Python code for constructing, drawing and analysing the idempotent total
+  graph of the ring Z_n, whose vertices are the non-zero zero-divisors and in
+  which two vertices are adjacent when their sum is an idempotent. The code
+  verifies the degree formula, the degree bounds and the edge-count formula of
+  the accompanying paper for all n up to a given bound.
