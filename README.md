@@ -60,6 +60,8 @@ SAVE_FIGURE_AS = None    # e.g. "gamma_Z30.pdf" (saved next to the file); None o
 VERIFY_UP_TO = 3000      # upper bound for "verify" and "paper"
 ```
 
+Large rings such as N = 100000 are handled in a few seconds. The graph is then too large to draw legibly, so the program draws the degree distribution instead (above `MAX_DRAW_VERTICES = 300` vertices), prints only the first rows of the vertex table, and skips the diameter (above `MAX_DIAMETER_VERTICES = 3000` vertices). These limits can be changed in the SETTINGS block.
+
 ### From a terminal
 
 ```
