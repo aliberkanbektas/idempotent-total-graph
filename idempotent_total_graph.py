@@ -44,6 +44,11 @@ SAVE_FIGURE_AS = None   # e.g. "gamma_Z30.pdf" -> saved next to this file;
                         # None -> the figure opens in a window
 VERIFY_UP_TO = 3000     # upper bound for "verify" and "paper"
 
+# Limits for large N (the graph itself is built quickly even for N = 100000):
+MAX_DRAW_VERTICES = 300   # larger graphs: a degree histogram is drawn instead
+MAX_TABLE_ROWS = 60       # "info" prints at most this many vertex rows
+MAX_DIAMETER_VERTICES = 3000  # the diameter (one BFS per vertex) only up to this size
+
 # ==========================================================================
 
 import argparse
@@ -151,7 +156,7 @@ def r_value(x: int, n: int) -> int:
 
 
 def degree_formula(x: int, n: int) -> int:
-    """deg(x) = 2^m - 2^(m - r(x)) - [x in I(Z_n)] - [2x in I(Z_n)]  (Theorem A)."""
+    """deg(x) = 2^m - 2^(m - r(x)) - [x in I(Z_n)] - [2x in I(Z_n)]  (Theorem 3.1)."""
     f = factorize(n)
     m = len(f)
     r = sum(1 for p in f if (x * (x - 1)) % p == 0)
@@ -160,7 +165,7 @@ def degree_formula(x: int, n: int) -> int:
 
 
 def edge_count_formula(n: int) -> int:
-    """|E(Gamma(Z_n))| (Theorem D)."""
+    """|E(Gamma(Z_n))| (Theorem 3.5)."""
     f = factorize(n)
     m = len(f)
     U = prod(p ** (a - 1) * (2 * p - 3) for p, a in f.items())
@@ -170,7 +175,7 @@ def edge_count_formula(n: int) -> int:
 
 
 def predicted_degree_range(n: int) -> tuple[int, int] | None:
-    """(min degree, max degree) predicted by Corollary B; None if Gamma is empty."""
+    """(min degree, max degree) predicted by Corollary 3.2; None if Gamma is empty."""
     f = factorize(n)
     m = len(f)
     if n == 4:
@@ -189,7 +194,7 @@ def predicted_degree_range(n: int) -> tuple[int, int] | None:
 
 
 def verify(N: int, verbose: bool = True) -> dict:
-    """Check Theorem A, Corollary B and Theorem D for every 2 <= n <= N.
+    """Check Theorem 3.1, Corollary 3.2 and Theorem 3.5 for every 2 <= n <= N.
 
     Degrees are computed directly from the definition (neighbour sets),
     independently of the formulas being tested.
@@ -258,10 +263,11 @@ def factor_tex(n: int) -> str:
     return r" \cdot ".join(f"{p}^{{{a}}}" if a > 1 else f"{p}" for p, a in factorize(n).items())
 
 
-def summary(n: int) -> dict:
-    g = idempotent_total_graph(n)
+def summary(n: int, g: nx.Graph | None = None) -> dict:
+    g = idempotent_total_graph(n) if g is None else g
     degs = [d for _, d in g.degree()]
     comps = nx.number_connected_components(g)
+    small = g.number_of_nodes() <= MAX_DIAMETER_VERTICES
     return {
         "n": n,
         "factorization": factor_tex(n),
@@ -272,7 +278,8 @@ def summary(n: int) -> dict:
         "min_deg": min(degs),
         "max_deg": max(degs),
         "components": comps,
-        "diameter": nx.diameter(g) if comps == 1 else None,
+        "diameter": nx.diameter(g) if comps == 1 and small else None,
+        "diameter_skipped": comps == 1 and not small,
         "is_path": comps == 1 and g.number_of_edges() == g.number_of_nodes() - 1 and max(degs) <= 2,
     }
 
@@ -280,15 +287,33 @@ def summary(n: int) -> dict:
 def print_info(n: int) -> None:
     g = idempotent_total_graph(n)
     I = idempotents(n)
+    Iset = set(I)
+    f = factorize(n)
+    m = len(f)
     print(f"Gamma(Z_{n}),  n = {factor_tex(n).replace(' ', '').replace(chr(92) + 'cdot', '*').replace('{', '').replace('}', '')}")
     print(f"  I(Z_{n}) = {I}")
     print(f"  |V| = {g.number_of_nodes()},  |E| = {g.number_of_edges()} "
           f"(formula: {edge_count_formula(n)})")
+
+    def formula(x):  # Theorem 3.1 (factorization and idempotents computed once)
+        r = sum(1 for p in f if (x * (x - 1)) % p == 0)
+        return 2**m - 2 ** (m - r) - (x in Iset) - ((2 * x) % n in Iset)
+
+    nodes = sorted(g.nodes)
     print(f"  {'x':>6} {'deg':>4} {'formula':>7}  neighbours")
-    for x in sorted(g.nodes):
-        print(f"  {x:>6} {g.degree(x):>4} {degree_formula(x, n):>7}  {sorted(g[x])}")
-    s = summary(n)
-    print(f"  components = {s['components']}, diameter = {s['diameter']}, path = {s['is_path']}")
+    for x in nodes[:MAX_TABLE_ROWS]:
+        print(f"  {x:>6} {g.degree(x):>4} {formula(x):>7}  {sorted(g[x])}")
+    if len(nodes) > MAX_TABLE_ROWS:
+        print(f"  ... ({len(nodes) - MAX_TABLE_ROWS} more vertices not printed)")
+    wrong = [x for x in nodes if g.degree(x) != formula(x)]
+    print(f"  Theorem 3.1 agrees with the graph for {len(nodes) - len(wrong)} of {len(nodes)} vertices")
+    hist = defaultdict(int)
+    for x in nodes:
+        hist[g.degree(x)] += 1
+    print("  degree distribution: " + ", ".join(f"deg {d}: {c}" for d, c in sorted(hist.items())))
+    s = summary(n, g)
+    diam = "not computed (graph too large)" if s["diameter_skipped"] else s["diameter"]
+    print(f"  components = {s['components']}, diameter = {diam}, path = {s['is_path']}")
 
 
 # --------------------------------------------------------------------------
@@ -369,12 +394,14 @@ def draw(n: int, filename: str | Path | None = None, ax=None, title: bool = True
 
     Non-trivial idempotents are shaded grey; vertices x with 2x idempotent
     (and x not idempotent) are drawn as squares - these are the vertices that
-    lose a neighbour in Theorem A.  Everything else is a white circle.
+    lose a neighbour in Theorem 3.1.  Everything else is a white circle.
     """
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
     g = idempotent_total_graph(n)
+    if g.number_of_nodes() > MAX_DRAW_VERTICES:
+        return draw_degree_histogram(n, g, filename, ax)
     I = set(idempotents(n))
     pos = layout(g)
     own = ax is None
@@ -426,6 +453,39 @@ def draw(n: int, filename: str | Path | None = None, ax=None, title: bool = True
     if handles and legend:
         ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.02),
                   ncol=len(handles), frameon=False, fontsize=9, handletextpad=0.3)
+    if own and filename:
+        fig.tight_layout()
+        fig.savefig(filename, bbox_inches="tight")
+        plt.close(fig)
+    return ax
+
+
+def draw_degree_histogram(n: int, g: nx.Graph | None = None,
+                          filename: str | Path | None = None, ax=None):
+    """For graphs too large to draw: bar chart of the vertex degrees."""
+    import matplotlib.pyplot as plt
+
+    g = idempotent_total_graph(n) if g is None else g
+    print(f"\nGamma(Z_{n}) has {g.number_of_nodes()} vertices: too many to draw legibly "
+          f"(limit MAX_DRAW_VERTICES = {MAX_DRAW_VERTICES}).\n"
+          f"The degree distribution is drawn instead.")
+    hist = defaultdict(int)
+    for _, d in g.degree():
+        hist[d] += 1
+    degs = sorted(hist)
+    own = ax is None
+    if own:
+        fig, ax = plt.subplots(figsize=(5.5, 3.4))
+    bars = ax.bar([str(d) for d in degs], [hist[d] for d in degs],
+                  color="#bdbdbd", edgecolor="black", linewidth=0.8)
+    ax.bar_label(bars, fontsize=9)
+    ax.set_xlabel("degree")
+    ax.set_ylabel("number of vertices")
+    lo, hi = predicted_degree_range(n) or (None, None)
+    bounds = f",  Cor. 3.2: [{lo}, {hi}]" if lo is not None else ""
+    ax.set_title(rf"Degrees in $\Gamma(\mathbb{{Z}}_{{{n}}})$:  $|V|={g.number_of_nodes()}$, "
+                 rf"$|E|={g.number_of_edges()}${bounds}", fontsize=10)
+    ax.spines[["top", "right"]].set_visible(False)
     if own and filename:
         fig.tight_layout()
         fig.savefig(filename, bbox_inches="tight")
